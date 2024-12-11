@@ -9,11 +9,11 @@ import re  # Ensure this import is present
 # Email credentials
 IMAP_SERVER = "imap.mail.me.com"
 IMAP_PORT = 993
-EMAIL_ADDRESS = "donna.131@icloud.com"  # Replace with your email
-EMAIL_PASSWORD = "hbjp-qzrs-zmvi-gxut"  # Replace with your app-specific password
+EMAIL_ADDRESS = os.getenv("email")  # Replace with your email
+EMAIL_PASSWORD = os.getenv("pass")  # Replace with your app-specific password
 
 # Discord bot token and channel ID
-DISCORD_TOKEN = "MTI5ODI5NDIxNjk4ODAzMzA1Ng.GaLZfL._meT4XOMPMj_3Guh7_Tt3coGnDQbEjDlh_lGiA"  # Replace with your bot token
+DISCORD_TOKEN = os.getenv("token")  # Replace with your bot token
 DISCORD_CHANNEL_ID = 1315531675152809994  # Replace with your channel ID
 
 # Discord bot setup
