@@ -113,26 +113,41 @@ async def email_monitor():
 
 async def keep_imap_alive():
     """Send NOOP command periodically to keep the IMAP connection alive."""
-    while True:
-        try:
-            with IMAPClient(IMAP_SERVER, port=IMAP_PORT) as client:
-                client.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-                client.select_folder("INBOX")  # Select the folder to keep the session active
-                client.noop()  # NOOP command does nothing but keeps the connection alive
+    try:
+        # Establish persistent connections for both email accounts
+        client1 = IMAPClient(IMAP_SERVER, port=IMAP_PORT)
+        client1.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        client1.select_folder("INBOX")
+
+        client2 = IMAPClient(IMAP_SERVER, port=IMAP_PORT)
+        client2.login(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
+        client2.select_folder("INBOX")
+
+        while True:
+            try:
+                # Send NOOP to keep connections alive
+                client1.noop()
                 print("Sent NOOP command to keep IMAP connection alive for mailbox 1.")
 
-            with IMAPClient(IMAP_SERVER, port=IMAP_PORT) as client:
-                client.login(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
-                client.select_folder("INBOX")  # Select the folder to keep the session active
-                client.noop()  # NOOP command does nothing but keeps the connection alive
+                client2.noop()
                 print("Sent NOOP command to keep IMAP connection alive for mailbox 2.")
+            except Exception as e:
+                print(f"Error during NOOP: {e}")
 
-        except Exception as e:
-            print(f"Error keeping IMAP connection alive: {e}")
+            await asyncio.sleep(300)  # Wait 5 minutes before next NOOP
 
-        # Wait 5 minutes before sending the next NOOP
-        await asyncio.sleep(300)  # 5 minutes
-
+    except Exception as e:
+        print(f"Error establishing IMAP connections: {e}")
+    finally:
+        # Ensure connections are closed properly when the task is stopped
+        try:
+            client1.logout()
+        except Exception:
+            pass
+        try:
+            client2.logout()
+        except Exception:
+            pass
 @bot.event
 async def on_ready():
     """Triggered when the bot is ready."""
