@@ -12,6 +12,8 @@ IMAP_SERVER = "imap.mail.me.com"
 IMAP_PORT = 993
 EMAIL_ADDRESS = os.getenv("email")  # Replace with your email
 EMAIL_PASSWORD = os.getenv("pass")  # Replace with your app-specific password
+EMAIL_ADDRESS_2 = os.getenv("email2")  # Replace with your second email
+EMAIL_PASSWORD_2 = os.getenv("pass2")  # Replace with your second app-specific password
 
 # Discord bot token and channel ID
 DISCORD_TOKEN = os.getenv("token")  # Replace with your bot token
@@ -23,27 +25,27 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Keep track of processed email IDs
 last_processed_email_id = None
+last_processed_email_id_2 = None
 
-async def fetch_new_email():
-    """Fetch the latest email if it has not been processed."""
-    global last_processed_email_id
+async def fetch_new_email(email_address, email_password, last_email_id):
+    """Fetch the latest email from the specified mailbox if it has not been processed."""
     try:
         with IMAPClient(IMAP_SERVER, port=IMAP_PORT) as client:
-            client.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            client.login(email_address, email_password)
             client.select_folder("INBOX")
 
             # Fetch all emails sorted by date (newest first)
             messages = client.search(["ALL"])
             if not messages:
-                return None  # No emails
+                return None, last_email_id  # No emails
 
             latest_email_id = messages[-1]  # Get the newest email ID
 
-            if latest_email_id == last_processed_email_id:
-                return None  # No new email since the last check
+            if latest_email_id == last_email_id:
+                return None, last_email_id  # No new email since the last check
 
             # Mark this email as processed
-            last_processed_email_id = latest_email_id
+            last_email_id = latest_email_id
 
             # Fetch the content of the newest email
             response = client.fetch([latest_email_id], ["BODY[]", "ENVELOPE"])
@@ -73,32 +75,41 @@ async def fetch_new_email():
             if otp_element:
                 otp_text = otp_element.get_text(strip=True)
                 if re.fullmatch(r"\d{4}", otp_text):  # Match exactly 4 digits
-                    return f"Email: {masked_email}\nOTP: {otp_text}"
+                    return f"Email: {masked_email}\nOTP: {otp_text}", last_email_id
                 else:
                     # Log in command prompt only
                     print(f"Found text in <td>: {otp_text} (Not a 4-digit OTP)")
 
-            return None  # No valid OTP found
+            return None, last_email_id  # No valid OTP found
 
     except Exception as e:
         print(f"Error fetching email: {e}")
-        return None
-
+        return None, last_email_id
 
 async def email_monitor():
-    """Monitor for new emails and send updates to Discord."""
+    """Monitor for new emails from both mailboxes and send updates to Discord."""
     await bot.wait_until_ready()
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
     if not channel:
         print("Invalid Discord channel ID.")
         return
 
-    while not bot.is_closed():
-        email_content = await fetch_new_email()
-        if email_content:
-            await channel.send(email_content)
-        await asyncio.sleep(5)  # Check every 5 seconds
+    global last_processed_email_id, last_processed_email_id_2
 
+    while not bot.is_closed():
+        email_content_1, last_processed_email_id = await fetch_new_email(
+            EMAIL_ADDRESS, EMAIL_PASSWORD, last_processed_email_id
+        )
+        email_content_2, last_processed_email_id_2 = await fetch_new_email(
+            EMAIL_ADDRESS_2, EMAIL_PASSWORD_2, last_processed_email_id_2
+        )
+
+        if email_content_1:
+            await channel.send(email_content_1)
+        if email_content_2:
+            await channel.send(email_content_2)
+
+        await asyncio.sleep(5)  # Check every 5 seconds
 
 async def keep_imap_alive():
     """Send NOOP command periodically to keep the IMAP connection alive."""
@@ -108,13 +119,19 @@ async def keep_imap_alive():
                 client.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
                 client.select_folder("INBOX")  # Select the folder to keep the session active
                 client.noop()  # NOOP command does nothing but keeps the connection alive
-                print("Sent NOOP command to keep IMAP connection alive.")
+                print("Sent NOOP command to keep IMAP connection alive for mailbox 1.")
+
+            with IMAPClient(IMAP_SERVER, port=IMAP_PORT) as client:
+                client.login(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
+                client.select_folder("INBOX")  # Select the folder to keep the session active
+                client.noop()  # NOOP command does nothing but keeps the connection alive
+                print("Sent NOOP command to keep IMAP connection alive for mailbox 2.")
+
         except Exception as e:
             print(f"Error keeping IMAP connection alive: {e}")
 
         # Wait 5 minutes before sending the next NOOP
         await asyncio.sleep(300)  # 5 minutes
-
 
 @bot.event
 async def on_ready():
@@ -123,7 +140,6 @@ async def on_ready():
     # Start both the email monitor and IMAP keep-alive tasks
     bot.loop.create_task(email_monitor())
     bot.loop.create_task(keep_imap_alive())  # Keep the IMAP connection alive
-
 
 # Run the bot
 bot.run(DISCORD_TOKEN)
