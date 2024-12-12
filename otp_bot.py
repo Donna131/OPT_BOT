@@ -114,40 +114,52 @@ async def email_monitor():
 async def keep_imap_alive():
     """Send NOOP command periodically to keep the IMAP connection alive."""
     try:
-        # Establish persistent connections for both email accounts
+        # Persistent connection for the first email
+        print("Connecting to IMAP server for mailbox 1...")
         client1 = IMAPClient(IMAP_SERVER, port=IMAP_PORT)
         client1.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
         client1.select_folder("INBOX")
+        print("IMAP connection for mailbox 1 established.")
 
+        # Persistent connection for the second email
+        print("Connecting to IMAP server for mailbox 2...")
         client2 = IMAPClient(IMAP_SERVER, port=IMAP_PORT)
         client2.login(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
         client2.select_folder("INBOX")
+        print("IMAP connection for mailbox 2 established.")
 
         while True:
             try:
-                # Send NOOP to keep connections alive
+                # Send NOOP commands
+                print("Sending NOOP for mailbox 1...")
                 client1.noop()
-                print("Sent NOOP command to keep IMAP connection alive for mailbox 1.")
+                print("NOOP for mailbox 1 successful.")
 
+                print("Sending NOOP for mailbox 2...")
                 client2.noop()
-                print("Sent NOOP command to keep IMAP connection alive for mailbox 2.")
+                print("NOOP for mailbox 2 successful.")
             except Exception as e:
                 print(f"Error during NOOP: {e}")
 
-            await asyncio.sleep(300)  # Wait 5 minutes before next NOOP
+            # Sleep for 5 minutes
+            await asyncio.sleep(60)
 
     except Exception as e:
         print(f"Error establishing IMAP connections: {e}")
     finally:
-        # Ensure connections are closed properly when the task is stopped
+        # Close connections
         try:
+            print("Logging out mailbox 1...")
             client1.logout()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error logging out mailbox 1: {e}")
+
         try:
+            print("Logging out mailbox 2...")
             client2.logout()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error logging out mailbox 2: {e}")
+            
 @bot.event
 async def on_ready():
     """Triggered when the bot is ready."""
