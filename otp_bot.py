@@ -30,7 +30,7 @@ last_processed_email_id_2 = None
 
 SSL_CONTEXT = ssl.create_default_context()
 
-async def fetch_new_email(imap_client, last_email_id):
+async def fetch_new_email(imap_client, email_address, last_email_id):
     """Fetch the latest email from the IMAP client if it has not been processed."""
     try:
         imap_client.select_folder("INBOX")
@@ -45,6 +45,9 @@ async def fetch_new_email(imap_client, last_email_id):
         last_email_id = latest_email_id
         response = imap_client.fetch([latest_email_id], ["BODY[]", "ENVELOPE"])
         raw_email = response[latest_email_id][b"BODY[]"]
+
+        # Mask email address
+        masked_email = email_address[:6] + "******" + email_address[email_address.index("@"):]
 
         msg = email.message_from_bytes(raw_email)
         if msg.is_multipart():
@@ -61,12 +64,14 @@ async def fetch_new_email(imap_client, last_email_id):
         if otp_element:
             otp_text = otp_element.get_text(strip=True)
             if re.fullmatch(r"\d{4}", otp_text):
-                return otp_text, last_email_id
+                # Include masked email in the returned content
+                return f"Email: {masked_email}\nOTP: {otp_text}", last_email_id
         return None, last_email_id
 
     except Exception as e:
         print(f"Error fetching email: {e}")
         return None, last_email_id
+
 
 
 async def email_monitor():
@@ -88,18 +93,23 @@ async def email_monitor():
             print("Logged in to both mailboxes.")
 
             while True:
-                email_content_1, last_processed_email_id_1 = await fetch_new_email(client1, last_processed_email_id_1)
-                email_content_2, last_processed_email_id_2 = await fetch_new_email(client2, last_processed_email_id_2)
+                email_content_1, last_processed_email_id_1 = await fetch_new_email(
+                    client1, EMAIL_ADDRESS_1, last_processed_email_id_1
+                )
+                email_content_2, last_processed_email_id_2 = await fetch_new_email(
+                    client2, EMAIL_ADDRESS_2, last_processed_email_id_2
+                )
 
                 if email_content_1:
-                    await channel.send(f"New OTP: {email_content_1}")
+                    await channel.send(email_content_1)
                 if email_content_2:
-                    await channel.send(f"New OTP: {email_content_2}")
+                    await channel.send(email_content_2)
 
                 await asyncio.sleep(5)
 
     except Exception as e:
         print(f"Error in email monitor: {e}")
+
 
 
 async def keep_imap_alive():
