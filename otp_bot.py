@@ -7,6 +7,12 @@ from discord import Intents
 import os
 import ssl
 import re
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Email credentials
 IMAP_SERVER = "imap.mail.me.com"
@@ -30,18 +36,33 @@ last_processed_email_id_2 = None
 
 SSL_CONTEXT = ssl.create_default_context()
 
+async def create_imap_client(email_address, email_password):
+    """Create and return a new IMAP client connection."""
+    try:
+        client = IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT)
+        client.login(email_address, email_password)
+        logger.info(f"Logged in to mailbox: {email_address[:6]}******")
+        return client
+    except Exception as e:
+        logger.error(f"Error creating IMAP client for {email_address}: {e}")
+        return None
+
 async def fetch_new_email(imap_client, last_email_id):
     """Fetch the latest email from the IMAP client if it has not been processed."""
+    if not imap_client:
+        logger.error("IMAP client is None")
+        return None, last_email_id
+
     try:
         imap_client.select_folder("INBOX")
         messages = imap_client.search(["ALL"])
         if not messages:
-            print("No messages in the inbox.")
+            logger.info("No messages in the inbox.")
             return None, last_email_id
 
         latest_email_id = messages[-1]
         if latest_email_id == last_email_id:
-            print("No new emails.")
+            logger.info("No new emails.")
             return None, last_email_id  # No new email
 
         last_email_id = latest_email_id
@@ -55,9 +76,9 @@ async def fetch_new_email(imap_client, last_email_id):
         if envelope:
             recipient_email = envelope.to[0].mailbox.decode() + "@" + envelope.to[0].host.decode()
             masked_email = recipient_email[:6] + "******" + recipient_email[recipient_email.index("@"):]
-            print(f"Extracted recipient email: {masked_email}")
+            logger.info(f"Extracted recipient email: {masked_email}")
         else:
-            print("Failed to extract the recipient email.")
+            logger.warning("Failed to extract the recipient email.")
             return None, last_email_id
 
         # Extract email body
@@ -68,7 +89,7 @@ async def fetch_new_email(imap_client, last_email_id):
                     body = part.get_payload(decode=True).decode()
                     break
             if not body:
-                print("No HTML part found in the email.")
+                logger.warning("No HTML part found in the email.")
                 return None, last_email_id
         else:
             body = msg.get_payload(decode=True).decode()
@@ -79,88 +100,67 @@ async def fetch_new_email(imap_client, last_email_id):
         if otp_element:
             otp_text = otp_element.get_text(strip=True)
             if re.fullmatch(r"\d{4}", otp_text):
-                print(f"Extracted OTP: {otp_text}")
+                logger.info(f"Extracted OTP: {otp_text}")
                 return f"Email: {masked_email}\nOTP: {otp_text}", last_email_id
             else:
-                print(f"Failed to match OTP format. Extracted text: {otp_text}")
+                logger.warning(f"Failed to match OTP format. Extracted text: {otp_text}")
         else:
-            print("No OTP element found in the email body.")
+            logger.warning("No OTP element found in the email body.")
 
         return None, last_email_id
 
     except Exception as e:
-        print(f"Error fetching email: {e}")
+        logger.error(f"Error fetching email: {e}")
         return None, last_email_id
-
 
 async def email_monitor():
     """Monitor new emails for both accounts and send the information to Discord."""
     await bot.wait_until_ready()
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
     if not channel:
-        print(f"Invalid Discord channel ID: {DISCORD_CHANNEL_ID}")
+        logger.error(f"Invalid Discord channel ID: {DISCORD_CHANNEL_ID}")
         return
 
     global last_processed_email_id_1, last_processed_email_id_2
 
-    try:
-        with IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT) as client1, \
-             IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT) as client2:
-            client1.login(EMAIL_ADDRESS_1, EMAIL_PASSWORD_1)
-            client2.login(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
-            print("Logged in to both mailboxes.")
+    while True:
+        try:
+            # Create new clients for each iteration to prevent connection staleness
+            client1 = await create_imap_client(EMAIL_ADDRESS_1, EMAIL_PASSWORD_1)
+            client2 = await create_imap_client(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
 
-            while True:
-                # Check inbox 1
-                email_content_1, last_processed_email_id_1 = await fetch_new_email(client1, last_processed_email_id_1)
-                if email_content_1:
-                    print(f"Sending to Discord (Inbox 1): {email_content_1}")
-                    await channel.send(email_content_1)
+            if not client1 or not client2:
+                logger.error("Failed to create IMAP clients")
+                await asyncio.sleep(60)  # Wait before retrying
+                continue
 
-                # Check inbox 2
-                email_content_2, last_processed_email_id_2 = await fetch_new_email(client2, last_processed_email_id_2)
-                if email_content_2:
-                    print(f"Sending to Discord (Inbox 2): {email_content_2}")
-                    await channel.send(email_content_2)
+            # Check inbox 1
+            email_content_1, last_processed_email_id_1 = await fetch_new_email(client1, last_processed_email_id_1)
+            if email_content_1:
+                logger.info(f"Sending to Discord (Inbox 1): {email_content_1}")
+                await channel.send(email_content_1)
 
-                await asyncio.sleep(5)
+            # Check inbox 2
+            email_content_2, last_processed_email_id_2 = await fetch_new_email(client2, last_processed_email_id_2)
+            if email_content_2:
+                logger.info(f"Sending to Discord (Inbox 2): {email_content_2}")
+                await channel.send(email_content_2)
 
-    except Exception as e:
-        print(f"Error in email monitor: {e}")
+            # Close clients after use
+            client1.logout()
+            client2.logout()
 
+            await asyncio.sleep(5)
 
-
-async def keep_imap_alive():
-    """Send periodic NOOP commands to keep the IMAP connections alive."""
-    try:
-        # Persistent connections
-        with IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT) as client1, \
-             IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT) as client2:
-            client1.login(EMAIL_ADDRESS_1, EMAIL_PASSWORD_1)
-            client2.login(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
-            print("IMAP connections established for NOOP.")
-
-            while True:
-                try:
-                    client1.noop()
-                    print("NOOP successful for mailbox 1.")
-                    client2.noop()
-                    print("NOOP successful for mailbox 2.")
-                except Exception as e:
-                    print(f"Error during NOOP: {e}")
-                await asyncio.sleep(600)
-
-    except Exception as e:
-        print(f"Error establishing NOOP connections: {e}")
-
+        except Exception as e:
+            logger.error(f"Error in email monitor main loop: {e}")
+            await asyncio.sleep(60)  # Wait before retrying
 
 @bot.event
 async def on_ready():
     """Triggered when the bot is ready."""
-    print(f"Logged in as {bot.user}")
+    logger.info(f"Logged in as {bot.user}")
     bot.loop.create_task(email_monitor())
-    bot.loop.create_task(keep_imap_alive())
-
 
 # Run the bot
 bot.run(DISCORD_TOKEN)
