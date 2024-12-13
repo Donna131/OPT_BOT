@@ -18,7 +18,7 @@ EMAIL_PASSWORD_2 = os.getenv("pass2")
 
 # Discord bot token and channel ID
 DISCORD_TOKEN = os.getenv("token")
-DISCORD_CHANNEL_ID = 123456789012345678  # Replace with your channel ID
+DISCORD_CHANNEL_ID = 1315531675152809994  # Replace with your channel ID
 
 # Discord bot setup
 intents = Intents.default()
