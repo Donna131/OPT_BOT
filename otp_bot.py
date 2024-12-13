@@ -183,7 +183,7 @@ async def email_monitor():
                 await channel.send(email_content_2)
 
             # Wait longer between checks
-            await asyncio.sleep(300)  # 1 minute between checks
+            await asyncio.sleep(30)  # 1 minute between checks
 
         except Exception as e:
             logger.error(f"Error in email monitor main loop: {e}")
