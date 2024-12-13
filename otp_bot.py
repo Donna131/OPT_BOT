@@ -30,7 +30,7 @@ last_processed_email_id_2 = None
 
 SSL_CONTEXT = ssl.create_default_context()
 with IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT) as client:
-    client.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+    client.login(EMAIL_ADDRESS, EMAIL_PASSWORD, EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
 
 async def fetch_new_email(email_address, email_password, last_email_id):
     """Fetch the latest email from the specified mailbox if it has not been processed."""
