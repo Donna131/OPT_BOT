@@ -11,13 +11,13 @@ import re
 # Email credentials
 IMAP_SERVER = "imap.mail.me.com"
 IMAP_PORT = 993
-EMAIL_ADDRESS_1 = "email"
-EMAIL_PASSWORD_1 = "pass"
-EMAIL_ADDRESS_2 = "email2"
-EMAIL_PASSWORD_2 = "pass2"
+EMAIL_ADDRESS_1 = os.getenv("email")
+EMAIL_PASSWORD_1 = os.getenv("pass")
+EMAIL_ADDRESS_2 = os.getenv("email2")
+EMAIL_PASSWORD_2 = os.getenv("pass2")
 
 # Discord bot token and channel ID
-DISCORD_TOKEN = "token"
+DISCORD_TOKEN = os.getenv("token")
 DISCORD_CHANNEL_ID = 123456789012345678  # Replace with your channel ID
 
 # Discord bot setup
