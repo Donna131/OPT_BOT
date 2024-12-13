@@ -30,7 +30,7 @@ last_processed_email_id_2 = None
 
 SSL_CONTEXT = ssl.create_default_context()
 
-async def fetch_new_email(imap_client, email_address, last_email_id):
+async def fetch_new_email(imap_client, last_email_id):
     """Fetch the latest email from the IMAP client if it has not been processed."""
     try:
         imap_client.select_folder("INBOX")
@@ -46,10 +46,16 @@ async def fetch_new_email(imap_client, email_address, last_email_id):
         response = imap_client.fetch([latest_email_id], ["BODY[]", "ENVELOPE"])
         raw_email = response[latest_email_id][b"BODY[]"]
 
-        # Mask email address
-        masked_email = email_address[:6] + "******" + email_address[email_address.index("@"):]
-
         msg = email.message_from_bytes(raw_email)
+
+        # Extract recipient email from the envelope
+        envelope = response[latest_email_id][b"ENVELOPE"]
+        recipient_email = envelope.to[0].mailbox.decode() + "@" + envelope.to[0].host.decode()
+
+        # Mask the recipient email
+        masked_email = recipient_email[:6] + "******" + recipient_email[recipient_email.index("@"):]
+
+        # Extract body content
         if msg.is_multipart():
             for part in msg.walk():
                 if part.get_content_type() == "text/html":
@@ -66,6 +72,7 @@ async def fetch_new_email(imap_client, email_address, last_email_id):
             if re.fullmatch(r"\d{4}", otp_text):
                 # Include masked email in the returned content
                 return f"Email: {masked_email}\nOTP: {otp_text}", last_email_id
+
         return None, last_email_id
 
     except Exception as e:
