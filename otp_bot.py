@@ -36,16 +36,48 @@ last_processed_email_id_2 = None
 
 SSL_CONTEXT = ssl.create_default_context()
 
-async def create_imap_client(email_address, email_password):
-    """Create and return a new IMAP client connection."""
-    try:
-        client = IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT)
-        client.login(email_address, email_password)
-        logger.info(f"Logged in to mailbox: {email_address[:6]}******")
-        return client
-    except Exception as e:
-        logger.error(f"Error creating IMAP client for {email_address}: {e}")
-        return None
+class IMAPClientManager:
+    def __init__(self, email_address, email_password):
+        self.email_address = email_address
+        self.email_password = email_password
+        self.client = None
+
+    async def get_client(self):
+        """Create a new IMAP client or return existing client."""
+        try:
+            # If client exists and is logged in, return it
+            if self.client and self._is_client_alive():
+                return self.client
+
+            # Create a new client
+            self.client = IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT)
+            self.client.login(self.email_address, self.email_password)
+            logger.info(f"Logged in to mailbox: {self.email_address[:6]}******")
+            return self.client
+        except Exception as e:
+            logger.error(f"Error creating IMAP client for {self.email_address}: {e}")
+            self.client = None
+            return None
+
+    def _is_client_alive(self):
+        """Check if the current client is still alive."""
+        try:
+            # Try a simple NOOP command to check connection
+            self.client.noop()
+            return True
+        except Exception:
+            return False
+
+    def close_client(self):
+        """Close the IMAP client if it exists."""
+        if self.client:
+            try:
+                self.client.logout()
+                logger.info(f"Logged out of mailbox: {self.email_address[:6]}******")
+            except Exception as e:
+                logger.error(f"Error closing client for {self.email_address}: {e}")
+            finally:
+                self.client = None
 
 async def fetch_new_email(imap_client, last_email_id):
     """Fetch the latest email from the IMAP client if it has not been processed."""
@@ -121,17 +153,21 @@ async def email_monitor():
         logger.error(f"Invalid Discord channel ID: {DISCORD_CHANNEL_ID}")
         return
 
+    # Create client managers
+    client_manager1 = IMAPClientManager(EMAIL_ADDRESS_1, EMAIL_PASSWORD_1)
+    client_manager2 = IMAPClientManager(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
+
     global last_processed_email_id_1, last_processed_email_id_2
 
     while True:
         try:
-            # Create new clients for each iteration to prevent connection staleness
-            client1 = await create_imap_client(EMAIL_ADDRESS_1, EMAIL_PASSWORD_1)
-            client2 = await create_imap_client(EMAIL_ADDRESS_2, EMAIL_PASSWORD_2)
+            # Get clients (will reuse existing or create new if needed)
+            client1 = await client_manager1.get_client()
+            client2 = await client_manager2.get_client()
 
             if not client1 or not client2:
                 logger.error("Failed to create IMAP clients")
-                await asyncio.sleep(60)  # Wait before retrying
+                await asyncio.sleep(180)  # Wait 3 minutes before retrying
                 continue
 
             # Check inbox 1
@@ -146,15 +182,12 @@ async def email_monitor():
                 logger.info(f"Sending to Discord (Inbox 2): {email_content_2}")
                 await channel.send(email_content_2)
 
-            # Close clients after use
-            client1.logout()
-            client2.logout()
-
-            await asyncio.sleep(5)
+            # Wait longer between checks
+            await asyncio.sleep(300)  # 1 minute between checks
 
         except Exception as e:
             logger.error(f"Error in email monitor main loop: {e}")
-            await asyncio.sleep(60)  # Wait before retrying
+            await asyncio.sleep(180)  # Wait 3 minutes before retrying
 
 @bot.event
 async def on_ready():
