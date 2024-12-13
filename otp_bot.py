@@ -36,10 +36,12 @@ async def fetch_new_email(imap_client, last_email_id):
         imap_client.select_folder("INBOX")
         messages = imap_client.search(["ALL"])
         if not messages:
+            print("No messages in the inbox.")
             return None, last_email_id
 
         latest_email_id = messages[-1]
         if latest_email_id == last_email_id:
+            print("No new emails.")
             return None, last_email_id  # No new email
 
         last_email_id = latest_email_id
@@ -48,19 +50,26 @@ async def fetch_new_email(imap_client, last_email_id):
 
         msg = email.message_from_bytes(raw_email)
 
-        # Extract recipient email from the envelope
-        envelope = response[latest_email_id][b"ENVELOPE"]
-        recipient_email = envelope.to[0].mailbox.decode() + "@" + envelope.to[0].host.decode()
+        # Extract recipient email
+        envelope = response[latest_email_id].get(b"ENVELOPE", None)
+        if envelope:
+            recipient_email = envelope.to[0].mailbox.decode() + "@" + envelope.to[0].host.decode()
+            masked_email = recipient_email[:6] + "******" + recipient_email[recipient_email.index("@"):]
+            print(f"Extracted recipient email: {masked_email}")
+        else:
+            print("Failed to extract the recipient email.")
+            return None, last_email_id
 
-        # Mask the recipient email
-        masked_email = recipient_email[:6] + "******" + recipient_email[recipient_email.index("@"):]
-
-        # Extract body content
+        # Extract email body
         if msg.is_multipart():
+            body = None
             for part in msg.walk():
                 if part.get_content_type() == "text/html":
                     body = part.get_payload(decode=True).decode()
                     break
+            if not body:
+                print("No HTML part found in the email.")
+                return None, last_email_id
         else:
             body = msg.get_payload(decode=True).decode()
 
@@ -70,8 +79,12 @@ async def fetch_new_email(imap_client, last_email_id):
         if otp_element:
             otp_text = otp_element.get_text(strip=True)
             if re.fullmatch(r"\d{4}", otp_text):
-                # Include masked email in the returned content
+                print(f"Extracted OTP: {otp_text}")
                 return f"Email: {masked_email}\nOTP: {otp_text}", last_email_id
+            else:
+                print(f"Failed to match OTP format. Extracted text: {otp_text}")
+        else:
+            print("No OTP element found in the email body.")
 
         return None, last_email_id
 
@@ -80,19 +93,17 @@ async def fetch_new_email(imap_client, last_email_id):
         return None, last_email_id
 
 
-
 async def email_monitor():
-    """Monitor new emails for both accounts."""
+    """Monitor new emails for both accounts and send the information to Discord."""
     await bot.wait_until_ready()
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
     if not channel:
-        print("Invalid Discord channel ID.")
+        print(f"Invalid Discord channel ID: {DISCORD_CHANNEL_ID}")
         return
 
     global last_processed_email_id_1, last_processed_email_id_2
 
     try:
-        # Establish connections
         with IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT) as client1, \
              IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT) as client2:
             client1.login(EMAIL_ADDRESS_1, EMAIL_PASSWORD_1)
@@ -100,16 +111,16 @@ async def email_monitor():
             print("Logged in to both mailboxes.")
 
             while True:
-                email_content_1, last_processed_email_id_1 = await fetch_new_email(
-                    client1, EMAIL_ADDRESS_1, last_processed_email_id_1
-                )
-                email_content_2, last_processed_email_id_2 = await fetch_new_email(
-                    client2, EMAIL_ADDRESS_2, last_processed_email_id_2
-                )
-
+                # Check inbox 1
+                email_content_1, last_processed_email_id_1 = await fetch_new_email(client1, last_processed_email_id_1)
                 if email_content_1:
+                    print(f"Sending to Discord (Inbox 1): {email_content_1}")
                     await channel.send(email_content_1)
+
+                # Check inbox 2
+                email_content_2, last_processed_email_id_2 = await fetch_new_email(client2, last_processed_email_id_2)
                 if email_content_2:
+                    print(f"Sending to Discord (Inbox 2): {email_content_2}")
                     await channel.send(email_content_2)
 
                 await asyncio.sleep(5)
