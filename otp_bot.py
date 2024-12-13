@@ -28,7 +28,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 last_processed_email_id_1 = None
 last_processed_email_id_2 = None
 
-# SSL Context for secure connections
 SSL_CONTEXT = ssl.create_default_context()
 
 async def fetch_new_email(imap_client, last_email_id):
