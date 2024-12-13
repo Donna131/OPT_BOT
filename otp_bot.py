@@ -5,18 +5,19 @@ from bs4 import BeautifulSoup
 from discord.ext import commands
 from discord import Intents
 import os
+import ssl
 import re  # Ensure this import is present
 
 # Email credentials
 IMAP_SERVER = "imap.mail.me.com"
 IMAP_PORT = 993
-EMAIL_ADDRESS = os.getenv("email")  # Replace with your email
-EMAIL_PASSWORD = os.getenv("pass")  # Replace with your app-specific password
-EMAIL_ADDRESS_2 = os.getenv("email2")  # Replace with your second email
-EMAIL_PASSWORD_2 = os.getenv("pass2")  # Replace with your second app-specific password
+EMAIL_ADDRESS = "email"  # Replace with your email
+EMAIL_PASSWORD = "pass" # Replace with your app-specific password
+EMAIL_ADDRESS_2 = "email2"  # Replace with your second email
+EMAIL_PASSWORD_2 = "pass2"  # Replace with your second app-specific password
 
 # Discord bot token and channel ID
-DISCORD_TOKEN = os.getenv("token")  # Replace with your bot token
+DISCORD_TOKEN = "token" # Replace with your bot token
 DISCORD_CHANNEL_ID = 1315531675152809994  # Replace with your channel ID
 
 # Discord bot setup
@@ -26,6 +27,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Keep track of processed email IDs
 last_processed_email_id = None
 last_processed_email_id_2 = None
+
+SSL_CONTEXT = ssl.create_default_context()
+with IMAPClient(IMAP_SERVER, port=IMAP_PORT, ssl_context=SSL_CONTEXT) as client:
+    client.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
 
 async def fetch_new_email(email_address, email_password, last_email_id):
     """Fetch the latest email from the specified mailbox if it has not been processed."""
@@ -142,7 +147,7 @@ async def keep_imap_alive():
                 print(f"Error during NOOP: {e}")
 
             # Sleep for 5 minutes
-            await asyncio.sleep(60)
+            await asyncio.sleep(600)
 
     except Exception as e:
         print(f"Error establishing IMAP connections: {e}")
